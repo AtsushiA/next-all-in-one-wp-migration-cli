@@ -5,6 +5,7 @@
  * Registers: wp ai1wm-cli export
  *            wp ai1wm-cli import <file>
  *            wp ai1wm-cli restore <filename>
+ *            wp ai1wm-cli url-restore <url>
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -242,6 +243,111 @@ class Ai1wm_CLI_Command extends WP_CLI_Command {
 		Ai1wm_Import_Controller::import( $params );
 
 		WP_CLI::success( 'Restore complete. Site restored from: ' . $filename );
+	}
+
+	/**
+	 * Downloads a .wpress file from a URL and restores the site from it.
+	 *
+	 * The file is streamed directly to disk — suitable for large archives.
+	 * After downloading, the standard import pipeline is executed.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <url>
+	 * : HTTP/HTTPS URL of the .wpress backup file to download and restore.
+	 *
+	 * [--yes]
+	 * : Skip the confirmation prompt.
+	 *
+	 * [--timeout=<seconds>]
+	 * : HTTP download timeout in seconds. Default: 300.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *   # Download and restore (with confirmation prompt)
+	 *   $ wp ai1wm-cli url-restore https://example.com/backups/site.wpress
+	 *
+	 *   # Download and restore without confirmation
+	 *   $ wp ai1wm-cli url-restore https://example.com/backups/site.wpress --yes
+	 *
+	 * @subcommand url-restore
+	 */
+	public function url_restore( $args, $assoc_args ) {
+		if ( empty( $args[0] ) ) {
+			WP_CLI::error( 'Please specify a URL. Usage: wp ai1wm-cli url-restore <url>' );
+		}
+
+		$url = $args[0];
+
+		// Validate URL scheme
+		if ( ! preg_match( '#^https?://#i', $url ) ) {
+			WP_CLI::error( 'Invalid URL. Only HTTP and HTTPS URLs are supported.' );
+		}
+
+		// Validate .wpress extension in URL path
+		$url_path = wp_parse_url( $url, PHP_URL_PATH );
+		if ( pathinfo( $url_path, PATHINFO_EXTENSION ) !== 'wpress' ) {
+			WP_CLI::error( 'Invalid file type. The URL must point to a .wpress file.' );
+		}
+
+		$archive     = basename( $url_path );
+		$timeout     = (int) \WP_CLI\Utils\get_flag_value( $assoc_args, 'timeout', 300 );
+		$skip_confirm = (bool) \WP_CLI\Utils\get_flag_value( $assoc_args, 'yes', false );
+
+		// Confirm before overwriting
+		if ( ! $skip_confirm ) {
+			WP_CLI::confirm( 'This will download and restore from a remote URL, overwriting the current site. Are you sure?' );
+		}
+
+		// Prepare storage directory
+		$storage  = uniqid();
+		$dest_dir = AI1WM_STORAGE_PATH . DIRECTORY_SEPARATOR . $storage;
+
+		if ( ! wp_mkdir_p( $dest_dir ) ) {
+			WP_CLI::error( 'Could not create temporary storage directory: ' . $dest_dir );
+		}
+
+		$dest_path = $dest_dir . DIRECTORY_SEPARATOR . $archive;
+
+		WP_CLI::log( 'Downloading: ' . $url );
+
+		// Stream the remote file directly to disk (memory-efficient for large archives)
+		$response = wp_safe_remote_get(
+			$url,
+			array(
+				'timeout'  => $timeout,
+				'stream'   => true,
+				'filename' => $dest_path,
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			WP_CLI::error( 'Download failed: ' . $response->get_error_message() );
+		}
+
+		$http_code = wp_remote_retrieve_response_code( $response );
+		if ( $http_code !== 200 ) {
+			WP_CLI::error( sprintf( 'Download failed: server returned HTTP %d.', $http_code ) );
+		}
+
+		if ( ! file_exists( $dest_path ) || filesize( $dest_path ) === 0 ) {
+			WP_CLI::error( 'Download completed but the file is missing or empty.' );
+		}
+
+		WP_CLI::log( sprintf( 'Download complete (%s). Starting restore...', ai1wm_size_format( filesize( $dest_path ), 1 ) ) );
+
+		// Run the import pipeline (priority 10 skips Import_Upload which requires $_FILES)
+		$params = array(
+			'priority'   => 10,
+			'secret_key' => get_option( 'ai1wm_secret_key' ),
+			'archive'    => $archive,
+			'storage'    => $storage,
+			'cli_args'   => array( 'yes' => $skip_confirm ),
+		);
+
+		Ai1wm_Import_Controller::import( $params );
+
+		WP_CLI::success( 'Restore complete. Site restored from: ' . $url );
 	}
 
 	/**
