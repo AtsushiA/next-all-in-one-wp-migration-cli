@@ -13,6 +13,8 @@ All-in-One WP Migration プラグインを WP-CLI から操作できる拡張プ
   - [export](#export)
   - [import](#import)
   - [restore](#restore)
+  - [url-restore](#url-restore)
+  - [backup](#backup)
   - [backup list](#backup-list)
   - [backup delete](#backup-delete)
 - [アーキテクチャ](#アーキテクチャ)
@@ -20,11 +22,11 @@ All-in-One WP Migration プラグインを WP-CLI から操作できる拡張プ
   - [インポートパイプライン](#インポートパイプライン)
 - [ファイル構造](#ファイル構造)
 - [実装詳細](#実装詳細)
-  - [エクスポート実装](#エクスポート実装)
-  - [インポート実装](#インポート実装)
 - [制約事項](#制約事項)
 
 ---
+
+## 概要
 
 ### 既存コマンドとの関係
 
@@ -32,9 +34,14 @@ All-in-One WP Migration プラグインを WP-CLI から操作できる拡張プ
 |---|---|---|
 | `wp ai1wm export` | all-in-one-wp-migration | Unlimited Extension が必要なスタブ |
 | `wp ai1wm import` | all-in-one-wp-migration | Unlimited Extension が必要なスタブ |
+| `wp ai1wm backup` | all-in-one-wp-migration | Unlimited Extension が必要なスタブ |
 | `wp ai1wm-cli export` | 本プラグイン | 実際にエクスポートを実行 |
 | `wp ai1wm-cli import` | 本プラグイン | 任意パスの .wpress ファイルをインポート |
 | `wp ai1wm-cli restore` | 本プラグイン | バックアップ一覧のファイル名でリストア |
+| `wp ai1wm-cli url-restore` | 本プラグイン | リモート URL からダウンロードしてリストア |
+| `wp ai1wm-cli backup` | 本プラグイン | バックアップを作成（export の別名） |
+| `wp ai1wm-cli backup list` | 本プラグイン | バックアップ一覧を表示 |
+| `wp ai1wm-cli backup delete` | 本プラグイン | バックアップファイルを削除 |
 
 ---
 
@@ -73,7 +80,7 @@ wp ai1wm-cli export [--output=<path>] [--exclude-media] [--exclude-themes] [--ex
 
 | オプション | 説明 | デフォルト |
 |---|---|---|
-| `--output=<path>` | 出力先ファイルパス。指定しない場合はストレージディレクトリに保存 | なし |
+| `--output=<path>` | 出力先ファイルパス。指定しない場合はバックアップディレクトリに保存 | なし |
 | `--exclude-media` | メディアファイルを除外する | false |
 | `--exclude-themes` | テーマファイルを除外する | false |
 | `--exclude-plugins` | プラグインファイルを除外する | false |
@@ -95,23 +102,11 @@ wp ai1wm-cli export --exclude-media --exclude-db
 wp ai1wm-cli export --output=/tmp/backup.wpress && scp /tmp/backup.wpress user@server:/backups/
 ```
 
-#### 出力例
-
-```
-Preparing to export...
-Exporting database...
-Exporting media files...
-Exporting plugins...
-Exporting themes...
-Renaming export file...
-Success: Export complete. File saved to: /path/to/storage/backup-20260301-120000-ABC123.wpress
-```
-
 ---
 
 ### import
 
-`.wpress` バックアップファイルからサイトを復元する。
+`.wpress` バックアップファイルからサイトを復元する。ファイルシステム上の任意パスを指定できる。
 
 ```bash
 wp ai1wm-cli import <file> [--yes]
@@ -137,19 +132,6 @@ wp ai1wm-cli import /var/backups/site.wpress
 
 # 確認をスキップして即座にインポート（スクリプト自動化用）
 wp ai1wm-cli import /var/backups/site.wpress --yes
-```
-
-#### 出力例
-
-```
-Warning: This will overwrite the current site. Are you sure? [y/N] y
-Uploading backup file...
-Validating backup...
-Importing database...
-Importing media files...
-Importing plugins...
-Import complete.
-Success: Site restored successfully.
 ```
 
 ---
@@ -197,18 +179,87 @@ wp ai1wm-cli restore mysite-20260301-120000-abc123.wpress --yes
 | ファイルのコピー | あり（storage へコピー） | なし（バックアップディレクトリから直接読む） |
 | 用途 | 外部ファイルの持ち込み | `backup list` で確認したバックアップの復元 |
 
-#### 出力例
+---
 
+### url-restore
+
+リモート URL から `.wpress` ファイルをダウンロードしてリストアする。ファイルはメモリに展開せずディスクへ直接ストリーミング保存するため、大容量アーカイブにも対応。
+
+```bash
+wp ai1wm-cli url-restore <url> [--yes] [--timeout=<seconds>]
 ```
-Starting restore of: mysite-20260301-120000-abc123.wpress
-Success: Restore complete. Site restored from: mysite-20260301-120000-abc123.wpress
+
+#### 引数
+
+| 引数 | 説明 |
+|---|---|
+| `<url>` | ダウンロードする `.wpress` ファイルの HTTP / HTTPS URL |
+
+#### オプション
+
+| オプション | 説明 | デフォルト |
+|---|---|---|
+| `--yes` | 確認プロンプトをスキップして即座に実行する | false |
+| `--timeout=<seconds>` | ダウンロードのタイムアウト秒数 | 300 |
+
+#### 使用例
+
+```bash
+# URL を指定してリストア（確認プロンプトあり）
+wp ai1wm-cli url-restore https://example.com/backups/site.wpress
+
+# 確認をスキップして即座にリストア
+wp ai1wm-cli url-restore https://example.com/backups/site.wpress --yes
+
+# タイムアウトを延ばしてリストア（低速回線・大容量ファイル向け）
+wp ai1wm-cli url-restore https://example.com/backups/site.wpress --timeout=600
+```
+
+#### 処理フロー
+
+1. URL の HTTP/HTTPS スキームと `.wpress` 拡張子を検証
+2. `wp_safe_remote_get()` でストレージディレクトリにストリーミングダウンロード
+3. HTTP レスポンスコードとファイルサイズを確認
+4. `import` と同じパイプライン（priority 10）でリストア実行
+
+---
+
+### backup
+
+サイトのバックアップ（`.wpress` ファイル）を作成する。`export` と同等の機能。
+
+```bash
+wp ai1wm-cli backup [--output=<path>] [--exclude-media] [--exclude-themes] [--exclude-plugins] [--exclude-db]
+```
+
+#### オプション
+
+| オプション | 説明 | デフォルト |
+|---|---|---|
+| `--output=<path>` | 出力先ファイルパス。指定しない場合はバックアップディレクトリに保存 | なし |
+| `--exclude-media` | メディアファイルを除外する | false |
+| `--exclude-themes` | テーマファイルを除外する | false |
+| `--exclude-plugins` | プラグインファイルを除外する | false |
+| `--exclude-db` | データベースを除外する | false |
+
+#### 使用例
+
+```bash
+# フルバックアップを作成
+wp ai1wm-cli backup
+
+# バックアップを指定パスに保存
+wp ai1wm-cli backup --output=/var/backups/site.wpress
+
+# メディアとデータベースを除外
+wp ai1wm-cli backup --exclude-media --exclude-db
 ```
 
 ---
 
 ### backup list
 
-ストレージディレクトリ内のバックアップ一覧を表示する。
+バックアップディレクトリ内のバックアップ一覧を表示する。
 
 ```bash
 wp ai1wm-cli backup list [--format=<format>]
@@ -234,10 +285,10 @@ wp ai1wm-cli backup list --format=json
 
 ```
 +-----------------------------------------------+---------------------+----------+
-| Filename                                      | Created             | Size     |
+| filename                                      | created             | size     |
 +-----------------------------------------------+---------------------+----------+
-| backup-20260301-120000-ABC123.wpress          | 2026-03-01 12:00:00 | 256.4 MB |
-| backup-20260228-090000-DEF456.wpress          | 2026-02-28 09:00:00 | 251.1 MB |
+| mysite-20260301-120000-abc123.wpress          | 2026-03-01 12:00:00 | 256.4 MB |
+| mysite-20260228-090000-def456.wpress          | 2026-02-28 09:00:00 | 251.1 MB |
 +-----------------------------------------------+---------------------+----------+
 ```
 
@@ -266,7 +317,7 @@ wp ai1wm-cli backup delete <filename> [--yes]
 #### 使用例
 
 ```bash
-wp ai1wm-cli backup delete backup-20260228-090000-DEF456.wpress --yes
+wp ai1wm-cli backup delete mysite-20260228-090000-def456.wpress --yes
 ```
 
 ---
@@ -278,7 +329,7 @@ wp ai1wm-cli backup delete backup-20260228-090000-DEF456.wpress --yes
 ```
 WP-CLI コマンド (wp ai1wm-cli)
     │
-    ├── export コマンド
+    ├── export / backup コマンド
     │       └── Ai1wm_Export_Controller::export($params)
     │               └── apply_filters('ai1wm_export') パイプライン
     │                       └── 各 Export_* クラスの execute() を順次実行
@@ -287,13 +338,16 @@ WP-CLI コマンド (wp ai1wm-cli)
     │       └── ファイルを storage にコピー
     │               └── Ai1wm_Import_Controller::import($params, priority=10)
     │                       └── apply_filters('ai1wm_import') パイプライン
-    │                               └── 各 Import_* クラスの execute() を順次実行
     │
-    └── restore コマンド（backup list のファイル名を指定）
-            └── ストレージ作業ディレクトリのみ作成（ファイルコピーなし）
-                    └── Ai1wm_Import_Controller::import($params, priority=10, ai1wm_manual_restore=true)
+    ├── restore コマンド（backup list のファイル名を指定）
+    │       └── ストレージ作業ディレクトリのみ作成（ファイルコピーなし）
+    │               └── Ai1wm_Import_Controller::import($params, priority=10, ai1wm_manual_restore=true)
+    │                       └── AI1WM_BACKUPS_PATH から直接読み込み
+    │
+    └── url-restore コマンド（リモート URL を指定）
+            └── wp_safe_remote_get() でストレージにストリーミングダウンロード
+                    └── Ai1wm_Import_Controller::import($params, priority=10)
                             └── apply_filters('ai1wm_import') パイプライン
-                                    └── バックアップディレクトリから直接読み込み
 ```
 
 ### WP-CLI 環境での動作
@@ -336,7 +390,7 @@ if ( defined( 'WP_CLI' ) ) {
 | 250 | `Ai1wm_Export_Download` | `.wpress.tmp` → `.wpress` にリネーム |
 | 300 | `Ai1wm_Export_Clean` | 一時ファイルのクリーンアップ |
 
-> **Note**: `Export_Download`（Priority 250）は HTTP ダウンロードを送信しない。ファイルを `.wpress.tmp` から `.wpress` にリネームするのみ。WP-CLI コマンド完了後、`ai1wm_backup_path($params)` でファイルパスを取得できる。
+> **Note**: `Export_Download`（Priority 250）は HTTP ダウンロードを送信しない。ファイルを `.wpress.tmp` から `.wpress` にリネームするのみ。
 
 ---
 
@@ -362,7 +416,7 @@ if ( defined( 'WP_CLI' ) ) {
 | 350 | `Ai1wm_Import_Done` | インポート完了処理 |
 | 400 | `Ai1wm_Import_Clean` | 一時ファイルのクリーンアップ |
 
-> **Note**: `Import_Upload`（Priority 5）は `$_FILES` を前提とした HTTP アップロード処理のため、CLI からは実行できない。本プラグインではインポート前にファイルを storage ディレクトリへ手動コピーし、Priority 50 から処理を開始することでこのステップをスキップする。
+> **Note**: `Import_Upload`（Priority 5）は `$_FILES` を前提とした HTTP アップロード処理のため、CLI からは実行できない。本プラグインではインポート前にファイルを storage ディレクトリへ手動コピーし、Priority 10 から処理を開始することでこのステップをスキップする。
 
 ---
 
@@ -372,50 +426,44 @@ if ( defined( 'WP_CLI' ) ) {
 next-all-in-one-wp-migration-cli/
 ├── next-all-in-one-wp-migration-cli.php       # メインプラグインファイル
 ├── README.md                                  # 本ドキュメント
+├── .gitignore
 └── lib/
     └── command/
-        ├── class-ai1wm-cli-command.php        # export / import / restore コマンド
-        └── class-ai1wm-cli-backup-command.php # backup list / backup delete コマンド
+        ├── class-ai1wm-cli-command.php        # export / import / restore / url-restore
+        └── class-ai1wm-cli-backup-command.php # backup / backup list / backup delete
 ```
 
 ---
 
 ## 実装詳細
 
-### エクスポート実装
+### エクスポート実装（`export` / `backup`）
 
 ```php
-// WP-CLI コマンドから呼び出す際のパラメータ構造
 $params = [
     'priority'   => 5,
     'secret_key' => get_option( 'ai1wm_secret_key' ),
     'options'    => [
-        'no-media'    => $assoc_args['exclude-media'] ?? false,
-        'no-themes'   => $assoc_args['exclude-themes'] ?? false,
-        'no-plugins'  => $assoc_args['exclude-plugins'] ?? false,
-        'no-database' => $assoc_args['exclude-db'] ?? false,
+        'no-media'    => false,
+        'no-themes'   => false,
+        'no-plugins'  => false,
+        'no-database' => false,
     ],
 ];
 
-// コントローラーを直接呼び出し（WP-CLI 環境では同一プロセスで完結）
 $result = Ai1wm_Export_Controller::export( $params );
-
-// バックアップファイルのパスを取得
-$backup_path = ai1wm_backup_path( $result );
+$backup_path = AI1WM_BACKUPS_PATH . '/' . $result['archive'];
 ```
 
-### インポート実装（`import` コマンド）
+### インポート実装（`import` / `url-restore`）
 
-外部ファイルをファイルシステムの任意パスから取り込む場合、storage ディレクトリへのコピーが必要。
+外部ファイルまたはダウンロードしたファイルを storage ディレクトリへ配置し、Priority 10 から実行。
 
 ```php
-// ファイルを storage ディレクトリにコピー
 $storage = uniqid();
 $archive = basename( $file );
 copy( $file, AI1WM_STORAGE_PATH . '/' . $storage . '/' . $archive );
 
-// Import_Upload（Priority 5）をスキップして Priority 10 から開始
-// cli_args を渡すことで Import_Confirm の WP_CLI::confirm() も --yes でスキップ可
 $params = [
     'priority'   => 10,
     'secret_key' => get_option( 'ai1wm_secret_key' ),
@@ -427,21 +475,18 @@ $params = [
 Ai1wm_Import_Controller::import( $params );
 ```
 
-### リストア実装（`restore` コマンド）
+### リストア実装（`restore`）
 
-バックアップディレクトリ内のファイルを対象とする場合、`ai1wm_manual_restore` を使うことでファイルコピーが不要になる。
+`ai1wm_manual_restore=true` によりファイルコピーなしで `AI1WM_BACKUPS_PATH` から直接読み込む。
 
 ```php
-// 作業用ストレージフォルダのみ作成（ファイルコピーは不要）
 $storage = uniqid();
 wp_mkdir_p( AI1WM_STORAGE_PATH . '/' . $storage );
 
-// ai1wm_manual_restore = true のとき、ai1wm_archive_path() は
-// storage ではなく AI1WM_BACKUPS_PATH のファイルを指す
 $params = [
     'priority'             => 10,
     'secret_key'           => get_option( 'ai1wm_secret_key' ),
-    'archive'              => $filename,   // ファイル名のみ
+    'archive'              => $filename,
     'storage'              => $storage,
     'ai1wm_manual_restore' => true,
     'cli_args'             => [ 'yes' => $skip_confirm ],
@@ -450,23 +495,16 @@ $params = [
 Ai1wm_Import_Controller::import( $params );
 ```
 
-### シークレットキー
+### URL ダウンロード実装（`url-restore`）
 
-`ai1wm_verify_secret_key()` による認証が必要。WordPress データベースから取得する：
-
-```php
-$secret_key = get_option( 'ai1wm_secret_key' );
-```
-
-### エラーハンドリング
-
-親プラグインのコントローラーは `defined('WP_CLI')` を確認し、エラー時に `WP_CLI::error()` を呼び出す実装が既にある：
+`wp_safe_remote_get()` の `stream` オプションでメモリを使わずディスクへ直接保存。
 
 ```php
-// all-in-one-wp-migration の export-controller.php より（抜粋）
-if ( defined( 'WP_CLI' ) ) {
-    WP_CLI::error( sprintf( 'Export failed: %s', $e->getMessage() ) );
-}
+$response = wp_safe_remote_get( $url, [
+    'timeout'  => $timeout,  // デフォルト 300 秒
+    'stream'   => true,      // ファイルに直接書き込み（メモリ節約）
+    'filename' => $dest_path,
+] );
 ```
 
 ---
@@ -478,6 +516,7 @@ if ( defined( 'WP_CLI' ) ) {
 | **親プラグイン必須** | `all-in-one-wp-migration` が有効化されていないと動作しない |
 | **コマンド名の競合** | `wp ai1wm` は親プラグインが使用するため、本プラグインは `wp ai1wm-cli` を使用 |
 | **マルチサイト非対応** | マルチサイト環境での WP-CLI 実行は有料の Multisite Extension が必要 |
-| **ファイルサイズ制限** | PHP の `post_max_size` / `upload_max_filesize` 設定に依存 |
 | **暗号化バックアップ** | 暗号化された `.wpress` ファイルのインポートは有料拡張機能が必要 |
+| **url-restore の URL** | HTTP/HTTPS のみ対応。URL パスに `.wpress` 拡張子が含まれている必要がある |
 | **Import_Confirm プロンプト** | `--yes` なしで実行すると `Import_Confirm` ステップでも確認プロンプトが表示される。`cli_args['yes']` を params に渡すことで自動スキップ |
+| **backup コマンドのサブコマンド制約** | WP-CLI の制約により `__invoke` とサブコマンドを共存できないため、`backup` コマンド内で手動ルーティングしている |
