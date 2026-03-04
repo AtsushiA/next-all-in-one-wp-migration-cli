@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Next All-in-One WP Migration CLI
  * Description: WP-CLI commands for All-in-One WP Migration plugin. Provides export, import, and backup management without the Unlimited Extension.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Requires at least: 6.1
  * Requires PHP:      7.0
  * Author:            NExT-Season
