@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Build release ZIP
+        run: |
+          PLUGIN_SLUG="next-all-in-one-wp-migration-cli"
+          VERSION="${{ steps.version.outputs.version }}"
+          ZIP_NAME="${PLUGIN_SLUG}-${VERSION}.zip"
+
+          mkdir -p /tmp/${PLUGIN_SLUG}
+          cp -r next-all-in-one-wp-migration-cli.php lib/ README.md /tmp/${PLUGIN_SLUG}/
+
+          cd /tmp
+          zip -r ${ZIP_NAME} ${PLUGIN_SLUG}/
+          mv ${ZIP_NAME} $GITHUB_WORKSPACE/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "v${{ steps.version.outputs.version }}"
+          files: next-all-in-one-wp-migration-cli-${{ steps.version.outputs.version }}.zip
+          generate_release_notes: true
