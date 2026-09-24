@@ -22,8 +22,7 @@ jobs:
       - name: Build release ZIP
         run: |
           PLUGIN_SLUG="next-all-in-one-wp-migration-cli"
-          VERSION="${{ steps.version.outputs.version }}"
-          ZIP_NAME="${PLUGIN_SLUG}-${VERSION}.zip"
+          ZIP_NAME="${PLUGIN_SLUG}.zip"
 
           mkdir -p /tmp/${PLUGIN_SLUG}
           cp -r next-all-in-one-wp-migration-cli.php lib/ README.md /tmp/${PLUGIN_SLUG}/
@@ -36,5 +35,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: "v${{ steps.version.outputs.version }}"
-          files: next-all-in-one-wp-migration-cli-${{ steps.version.outputs.version }}.zip
+          files: next-all-in-one-wp-migration-cli.zip
           generate_release_notes: true
