@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: PHP syntax check
+        run: |
+          php -v
+          find . -name '*.php' -not -path './.git/*' -print0 | xargs -0 -n1 php -l
+
+      - name: Build release ZIP (dry run)
+        run: |
+          PLUGIN_SLUG="next-all-in-one-wp-migration-cli"
+          mkdir -p /tmp/${PLUGIN_SLUG}
+          cp -r next-all-in-one-wp-migration-cli.php lib/ README.md /tmp/${PLUGIN_SLUG}/
+          cd /tmp
+          zip -r ${PLUGIN_SLUG}.zip ${PLUGIN_SLUG}/
+          unzip -l ${PLUGIN_SLUG}.zip
